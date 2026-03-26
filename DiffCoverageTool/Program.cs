@@ -90,67 +90,136 @@ namespace DiffCoverageTool
 
         static (bool success, string output) RunDotnetTest(string repoPath)
         {
-            Console.WriteLine("Running dotnet test with coverage...");
-            string output = "";
-            bool success = true;
-            try
+            Console.WriteLine("Scanning for .NET projects/solutions...");
+            
+            // 1. Prioritize root .sln files
+            var slnFiles = Directory.GetFiles(repoPath, "*.sln", SearchOption.TopDirectoryOnly);
+            
+            List<string> runPaths = new List<string>();
+            
+            if (slnFiles.Length > 0)
             {
-                var startInfo = new ProcessStartInfo("dotnet", "test --collect:\"XPlat Code Coverage\"")
+                runPaths.Add(repoPath);
+            }
+            else
+            {
+                // 2. Fallback to extracting test projects dynamically across all subdirectories
+                var csprojFiles = Directory.GetFiles(repoPath, "*test*.csproj", SearchOption.AllDirectories);
+                if (csprojFiles.Length == 0)
                 {
-                    WorkingDirectory = repoPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                };
-                var process = Process.Start(startInfo);
-                output = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
-                process.WaitForExit();
+                    csprojFiles = Directory.GetFiles(repoPath, "*.csproj", SearchOption.AllDirectories);
+                }
                 
-                success = process.ExitCode == 0;
-                if (!success)
+                foreach (var proj in csprojFiles)
                 {
-                    Console.WriteLine("Warning: Tests failed. Continuing analysis anyway...");
+                    runPaths.Add(Path.GetDirectoryName(proj));
+                }
+                runPaths = runPaths.Distinct().ToList();
+            }
+
+            if (runPaths.Count == 0)
+            {
+                return (false, "Could not locate any .sln or .csproj files automatically.");
+            }
+
+            bool allSuccess = true;
+            string combinedOutput = "";
+
+            foreach (var executionPath in runPaths)
+            {
+                Console.WriteLine($"Running dotnet test in: {executionPath}");
+                try
+                {
+                    var startInfo = new ProcessStartInfo("dotnet", "test --collect:\"XPlat Code Coverage\"")
+                    {
+                        WorkingDirectory = executionPath,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false
+                    };
+                    var process = Process.Start(startInfo);
+                    string procOutput = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        allSuccess = false;
+                        combinedOutput += $"=== FAILED: {executionPath} ===\n{procOutput}\n\n";
+                        Console.WriteLine($"Warning: Tests failed in {executionPath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    allSuccess = false;
+                    combinedOutput += $"=== ERROR: {executionPath} ===\n{ex.Message}\n\n";
                 }
             }
-            catch (Exception ex)
-            {
-                success = false;
-                output = ex.Message;
-            }
-            return (success, output);
+
+            return (allSuccess, combinedOutput);
         }
 
         static (bool success, string output) RunAngularTest(string repoPath)
         {
-            Console.WriteLine("Running angular test with coverage...");
-            string output = "";
-            bool success = true;
-            try
+            Console.WriteLine("Scanning for Angular projects natively...");
+            
+            List<string> runPaths = new List<string>();
+            var packageJsons = Directory.GetFiles(repoPath, "package.json", SearchOption.AllDirectories)
+                                        .Where(p => !p.Replace('\\', '/').Contains("/node_modules/")).ToList();
+            
+            // 1. Prioritize root Angular monorepo workspace if it inherently encapsulates everything
+            if (packageJsons.Any(p => Path.GetDirectoryName(p).Equals(repoPath, StringComparison.OrdinalIgnoreCase)))
             {
-                // On Windows, running npm requires shell execution or invoking cmd.exe
-                var startInfo = new ProcessStartInfo("cmd.exe", "/c npm run test -- --no-watch --code-coverage")
+                runPaths.Add(repoPath);
+            }
+            else
+            {
+                // 2. Discover isolated Angular apps nested inside Microservice Mono-Repos!
+                foreach (var pkg in packageJsons)
                 {
-                    WorkingDirectory = repoPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                };
-                var process = Process.Start(startInfo);
-                output = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
-                process.WaitForExit();
-                
-                success = process.ExitCode == 0;
-                if (!success)
+                    runPaths.Add(Path.GetDirectoryName(pkg));
+                }
+                runPaths = runPaths.Distinct().ToList();
+            }
+
+            if (runPaths.Count == 0)
+            {
+                return (false, "Could not locate any valid package.json files for Javascript Testing.");
+            }
+
+            bool allSuccess = true;
+            string combinedOutput = "";
+
+            foreach (var executionPath in runPaths)
+            {
+                Console.WriteLine($"Running npm test inside natively discovered app scope: {executionPath}");
+                try
                 {
-                    Console.WriteLine("Warning: Tests failed. Continuing analysis anyway...");
+                    var startInfo = new ProcessStartInfo("cmd.exe", "/c npm run test -- --no-watch --code-coverage")
+                    {
+                        WorkingDirectory = executionPath,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false
+                    };
+                    var process = Process.Start(startInfo);
+                    string procOutput = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        allSuccess = false;
+                        combinedOutput += $"=== FAILED: {executionPath} ===\n{procOutput}\n\n";
+                        Console.WriteLine($"Warning: Angular/NPM tests violently exited inside scope {executionPath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    allSuccess = false;
+                    combinedOutput += $"=== ERROR: {executionPath} ===\n{ex.Message}\n\n";
                 }
             }
-            catch (Exception ex)
-            {
-                success = false;
-                output = ex.Message;
-            }
-            return (success, output);
+
+            return (allSuccess, combinedOutput);
         }
     }
 }
