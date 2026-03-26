@@ -13,10 +13,22 @@ namespace DiffCoverageTool
             string repoPath = args.Length > 0 ? args[0] : Directory.GetCurrentDirectory();
             string baseRef = args.Length > 1 ? args[1] : "HEAD~1";
             string projectType = args.Length > 2 ? args[2].ToLower() : "dotnet";
+            // args[3] = pipe-separated selected project paths (or "ALL")
+            // args[4] = reportMode
+            string selectedProjectsArg = args.Length > 3 ? args[3] : "ALL";
+            string reportMode = args.Length > 4 ? args[4].ToLower() : "detail-only";
+
+            HashSet<string> selectedPaths = selectedProjectsArg == "ALL"
+                ? null  // null means run everything
+                : new HashSet<string>(
+                    selectedProjectsArg.Split('|', StringSplitOptions.RemoveEmptyEntries),
+                    StringComparer.OrdinalIgnoreCase);
 
             repoPath = Path.GetFullPath(repoPath);
 
             Console.WriteLine($"Analyzing diff coverage in '{repoPath}' against base '{baseRef}'");
+            if (selectedPaths != null)
+                Console.WriteLine($"Running for {selectedPaths.Count} selected service(s).");
 
             try
             {
@@ -26,13 +38,13 @@ namespace DiffCoverageTool
 
                 if (projectType == "angular")
                 {
-                    var result = RunAngularTest(repoPath);
+                    var result = RunAngularTest(repoPath, selectedPaths);
                     testsPassed = result.success;
                     testOutput = result.output;
                 }
                 else
                 {
-                    var result = RunDotnetTest(repoPath);
+                    var result = RunDotnetTest(repoPath, selectedPaths);
                     testsPassed = result.success;
                     testOutput = result.output;
                 }
@@ -76,7 +88,7 @@ namespace DiffCoverageTool
                 Analyzer.Analyze(modifiedLines, coverageData);
 
                 // 5. Generate HTML Report
-                HtmlReportGenerator.GenerateReport(modifiedLines, coverageData, fileToPackage, repoPath, testsPassed, testOutput);
+                HtmlReportGenerator.GenerateReport(modifiedLines, coverageData, fileToPackage, repoPath, testsPassed, testOutput, reportMode);
 
                 return 0;
             }
@@ -88,39 +100,41 @@ namespace DiffCoverageTool
             }
         }
 
-        static (bool success, string output) RunDotnetTest(string repoPath)
+        static (bool success, string output) RunDotnetTest(string repoPath, HashSet<string> selectedPaths = null)
         {
             Console.WriteLine("Scanning for .NET projects/solutions...");
             
-            // 1. Prioritize root .sln files
-            var slnFiles = Directory.GetFiles(repoPath, "*.sln", SearchOption.TopDirectoryOnly);
-            
             List<string> runPaths = new List<string>();
-            
-            if (slnFiles.Length > 0)
+
+            // Only use the .sln shortcut when the user hasn't made a specific service selection.
+            // If selectedPaths is set, we must scan for individual .csproj dirs so paths can match.
+            var slnFiles = Directory.GetFiles(repoPath, "*.sln", SearchOption.TopDirectoryOnly);
+            if (slnFiles.Length > 0 && selectedPaths == null)
             {
                 runPaths.Add(repoPath);
             }
             else
             {
-                // 2. Fallback to extracting test projects dynamically across all subdirectories
                 var csprojFiles = Directory.GetFiles(repoPath, "*test*.csproj", SearchOption.AllDirectories);
                 if (csprojFiles.Length == 0)
-                {
                     csprojFiles = Directory.GetFiles(repoPath, "*.csproj", SearchOption.AllDirectories);
-                }
                 
                 foreach (var proj in csprojFiles)
-                {
-                    runPaths.Add(Path.GetDirectoryName(proj));
-                }
-                runPaths = runPaths.Distinct().ToList();
+                    runPaths.Add(Path.GetFullPath(Path.GetDirectoryName(proj)));
+                runPaths = runPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            // Filter: normalize selected paths too so case/trailing-slash differences don't cause mismatches
+            if (selectedPaths != null && selectedPaths.Count > 0)
+            {
+                var normalizedSelected = new HashSet<string>(
+                    selectedPaths.Select(p => Path.GetFullPath(p)),
+                    StringComparer.OrdinalIgnoreCase);
+                runPaths = runPaths.Where(p => normalizedSelected.Contains(Path.GetFullPath(p))).ToList();
             }
 
             if (runPaths.Count == 0)
-            {
-                return (false, "Could not locate any .sln or .csproj files automatically.");
-            }
+                return (false, "No matching projects found for the selected services.");
 
             bool allSuccess = true;
             string combinedOutput = "";
@@ -158,7 +172,7 @@ namespace DiffCoverageTool
             return (allSuccess, combinedOutput);
         }
 
-        static (bool success, string output) RunAngularTest(string repoPath)
+        static (bool success, string output) RunAngularTest(string repoPath, HashSet<string> selectedPaths = null)
         {
             Console.WriteLine("Scanning for Angular projects natively...");
             
@@ -166,25 +180,29 @@ namespace DiffCoverageTool
             var packageJsons = Directory.GetFiles(repoPath, "package.json", SearchOption.AllDirectories)
                                         .Where(p => !p.Replace('\\', '/').Contains("/node_modules/")).ToList();
             
-            // 1. Prioritize root Angular monorepo workspace if it inherently encapsulates everything
-            if (packageJsons.Any(p => Path.GetDirectoryName(p).Equals(repoPath, StringComparison.OrdinalIgnoreCase)))
+            if (packageJsons.Any(p => Path.GetDirectoryName(p).Equals(repoPath, StringComparison.OrdinalIgnoreCase))
+                && selectedPaths == null)
             {
-                runPaths.Add(repoPath);
+                runPaths.Add(Path.GetFullPath(repoPath));
             }
             else
             {
-                // 2. Discover isolated Angular apps nested inside Microservice Mono-Repos!
                 foreach (var pkg in packageJsons)
-                {
-                    runPaths.Add(Path.GetDirectoryName(pkg));
-                }
-                runPaths = runPaths.Distinct().ToList();
+                    runPaths.Add(Path.GetFullPath(Path.GetDirectoryName(pkg)));
+                runPaths = runPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            // Filter: normalize selected paths so case/separator differences don't cause mismatches
+            if (selectedPaths != null && selectedPaths.Count > 0)
+            {
+                var normalizedSelected = new HashSet<string>(
+                    selectedPaths.Select(p => Path.GetFullPath(p)),
+                    StringComparer.OrdinalIgnoreCase);
+                runPaths = runPaths.Where(p => normalizedSelected.Contains(Path.GetFullPath(p))).ToList();
             }
 
             if (runPaths.Count == 0)
-            {
-                return (false, "Could not locate any valid package.json files for Javascript Testing.");
-            }
+                return (false, "No matching Angular projects found for the selected services.");
 
             bool allSuccess = true;
             string combinedOutput = "";

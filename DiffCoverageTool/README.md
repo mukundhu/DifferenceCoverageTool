@@ -1,32 +1,31 @@
 # DiffCoverageTool
 
-A highly flexible .NET CLI tool and robust Web Dashboard that determines unit test code coverage specifically for **newly added or modified code** since a given commit, or dynamically generates a master **Full Project Coverage** report for your entire repository natively bypassing Git.
-
-This tool supports both **.NET `dotnet test`** and **Angular `npm run test`** architectures organically out-of-the-box, easily navigating large multi-project repositories securely.
+A highly flexible .NET CLI tool and interactive Web Dashboard for code coverage analysis. Supports **diff coverage** (new/modified lines only), **full project coverage**, and **selective per-service testing** across .NET and Angular monorepos.
 
 ## Core Features 🚀
-- **Multi-Framework Auto-Detect**: Effortlessly toggles between mapping `.NET Core` test coverage and `Angular Karma/Jest` workspaces.
-- **Microservices & Monorepos**: Recursively discovers multiple test projects natively across your entire codebase and logically aggregates their reports in one unified dashboard, separated automatically by `<package name="...">` service definitions.
-- **Full Project Coverage**: Flip a single switch in the Dashboard to map Coverage locally without ever querying your git differentials. 
-- **Uncommitted Changes Tracker**: Check your live modified uncommitted file deltas straight out of the UI organically.
-- **Export to PDF Data Tables**: Cleanly generates professional `.pdf` Data Datatables of your Coverable, Covered, and Output percentage statistics seamlessly grouped natively by Service names.
-- **Fail-Fast Error Dashboards**: Automatically traps, intercepts, and prints raw terminal exceptions (`MSBuild` failures or `karma` syntax traps) right at the top of the HTML console natively if the test engines exit with a non-zero exit code!
+
+| Feature | Description |
+|---|---|
+| **Multi-Framework** | Supports `.NET Core` (`dotnet test`) and `Angular` (`npm run test`) out of the box |
+| **Monorepo / Microservices** | Recursively discovers all projects in a folder — no root `.sln` required |
+| **Select Services** | Checkbox list auto-populates on folder load; run coverage for only the services you choose |
+| **Diff or Full Coverage** | Toggle between covering only changed lines vs. entire codebase |
+| **Report Mode** | Choose: `File Detail Only`, `File Detail + Service Summary`, or `Summary Only` |
+| **Export to PDF** | One-click export of the Service Summary table to a clean printable PDF |
+| **Fail-Fast Errors** | Test runner failures are surfaced directly inside the HTML report |
+| **Clear Reports** | Button to delete all generated `TestResults/` folders and coverage XML/HTML files |
+| **Uncommitted Changes** | Compare against live working-tree changes without committing |
 
 ## Prerequisites
-- .NET 8.0 SDK (or whichever version you compiled the tool with)
-- Node.js (v14+ recommended for the Web Dashboard)
-- Git installed and accessible from the command line
+- .NET 8.0 SDK
+- Node.js v14+
+- Git (for diff mode)
 
 ## How to Run
 
-### Option 1: Interactive Web Dashboard (Easiest Method)
-
-We've added a stunning, interactive Node.js Web Dashboard. It allows you to select your repository path, pick your target commits (including uncommitted files), specify your Framework (`.NET` or `Angular`), and instantly visually inspect the detailed metrics table.
-
-To launch the dashboard natively from the root of this exact repository, effortlessly execute the platform-specific scripts provided:
+### Option 1: Web Dashboard (Recommended)
 
 **Windows:**
-Double-click `start.bat` or run:
 ```cmd
 .\start.bat
 ```
@@ -35,24 +34,47 @@ Double-click `start.bat` or run:
 ```bash
 sh start.sh
 ```
-*(These scripts automatically install Node.js dependencies and launch the server implicitly via port `3000`. The C# project builds automatically when natively requested by the dashboard backend.)*
 
-### Option 2: Using `dotnet run` (CLI/CI Pipeline Usage)
+Open **http://localhost:3000** in your browser.
 
-You can run the engine heavily directly from its standalone core code directory to integrate natively into pipelines. Open a terminal securely inside the `DiffCoverageTool` folder, then seamlessly orchestrate with `dotnet run`:
+#### Dashboard Workflow
+1. Enter the root folder of your repository (can contain multiple services).
+2. Select **Framework** (`.NET Core` or `Angular`) and click **Load Commits**.
+3. A **Services** checklist appears — check only the projects you want to test.
+4. Choose a **Coverage Mode** (`Diff Coverage` or `Full Project`).
+5. In `Diff Coverage` mode, pick your **Base** and **Target** commits.
+6. Select a **Report Mode** from the dropdown.
+7. Click **Run Test Cases**.
+
+### Option 2: CLI / CI Pipeline
 
 ```bash
 # Syntax
-dotnet run --project <path-to-DiffCoverageTool.csproj> "<path-to-target-repo>" <base-git-ref> <framework-type>
+dotnet run --project DiffCoverageTool.csproj "<repoPath>" <diffArg> <framework> <selectedProjects> <reportMode>
 
-# Example: Run Full Coverage analysis dynamically against an Angular web project
-dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\angular-project" FULL_COVERAGE angular
+# Full coverage — all services — .NET
+dotnet run --project DiffCoverageTool.csproj "C:\repos\MyApp" FULL_COVERAGE dotnet ALL detail-and-summary
 
-# Example: Check uncommitted changes specifically against HEAD inside a NET monolith
-dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\csharp-solution" HEAD dotnet
+# Diff coverage — specific services — .NET (pipe-separate paths)
+dotnet run --project DiffCoverageTool.csproj "C:\repos\MyApp" HEAD~1 dotnet "C:\repos\MyApp\ServiceA|C:\repos\MyApp\ServiceB" detail-only
+
+# Angular full coverage
+dotnet run --project DiffCoverageTool.csproj "C:\repos\my-ng-app" FULL_COVERAGE angular ALL summary-only
 ```
+
+**Argument reference:**
+
+| Position | Value | Default |
+|---|---|---|
+| 1 | Repository path | current directory |
+| 2 | Git ref or `FULL_COVERAGE` | `HEAD~1` |
+| 3 | `dotnet` or `angular` | `dotnet` |
+| 4 | Pipe-separated project paths or `ALL` | `ALL` |
+| 5 | `detail-only` / `detail-and-summary` / `summary-only` | `detail-only` |
 
 ## Troubleshooting
 
-- **"No modified files found"**: This means your active `git diff` tracker didn't return any codebase deltas! Ensure you have made changes logically relative to the reference node, or select `Full Project Coverage` to map the entire repository organically instead!
-- **"Could not find coverage.cobertura.xml"**: The engine successfully executed the testing runners, but the respective coverage logfile was missing. If using .NET, make sure the project actively references `coverlet.collector`! If using Angular, securely append `--code-coverage=true` in your root environment architectures!
+- **"No modified files found"**: No git diff was detected. Use `Full Project` mode or change your base commit.
+- **"Could not find coverage.cobertura.xml"**: Ensure your test project references `coverlet.collector` (.NET) or that `--code-coverage` is enabled in `karma.conf.js` (Angular).
+- **"No matching projects found"**: The selected service paths don't match any discovered `.csproj` directories. Try clicking **Load Commits** again to refresh the services list.
+

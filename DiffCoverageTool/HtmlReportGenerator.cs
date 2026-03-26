@@ -14,9 +14,14 @@ namespace DiffCoverageTool
             Dictionary<string, string> fileToPackage,
             string repoPath,
             bool testsPassed = true,
-            string testOutput = "")
+            string testOutput = "",
+            string reportMode = "detail-only")
         {
-            if (!modifiedLines.Any())
+            // For summary-only mode we don't need modifiedLines to have entries
+            bool summaryOnly = reportMode == "summary-only";
+            bool showSummary = reportMode == "detail-and-summary" || summaryOnly;
+
+            if (!summaryOnly && !modifiedLines.Any())
             {
                 Console.WriteLine("No modified files to report.");
                 return;
@@ -108,7 +113,7 @@ namespace DiffCoverageTool
             if (!testsPassed && !string.IsNullOrWhiteSpace(testOutput))
             {
                 sb.AppendLine("    <div style=\"background-color: #ffeef0; border: 1px solid #cb2431; padding: 15px; border-radius: 6px; margin-bottom: 20px;\">");
-                sb.AppendLine("        <h2 style=\"color: #cb2431; margin-top: 0;\">⚠️ Test Failures Detected</h2>");
+                sb.AppendLine("        <h2 style=\"color: #cb2431; margin-top: 0;\">âš ï¸ Test Failures Detected</h2>");
                 sb.AppendLine("        <p>The test runner returned a non-zero exit code. Here is the console output for debugging:</p>");
                 sb.AppendLine("        <pre style=\"background-color: #24292e; color: #f6f8fa; padding: 15px; border-radius: 6px; overflow-x: auto; max-height: 400px;\">");
                 sb.AppendLine(System.Net.WebUtility.HtmlEncode(testOutput));
@@ -127,37 +132,55 @@ namespace DiffCoverageTool
                 sb.AppendLine($"        <span>Coverage: {pct:F2}%</span>");
             }
             sb.AppendLine("    </div>");
-
-            sb.AppendLine("    <div class=\"tabs no-print\">");
-            sb.AppendLine("        <button class=\"tab-btn active\" onclick=\"switchTab('fileTab', this)\">File Detail View</button>");
-            sb.AppendLine("        <button class=\"tab-btn\" onclick=\"switchTab('summaryTab', this)\">Project / Service Summary</button>");
-            sb.AppendLine("    </div>");
-
-            sb.AppendLine("    <div id=\"summaryTab\" class=\"tab-content\">");
-            sb.AppendLine("        <div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;\">");
-            sb.AppendLine("            <h2 style=\"margin: 0;\">Service Coverage Overview</h2>");
-            sb.AppendLine("            <button class=\"no-print\" onclick=\"window.print()\" style=\"padding: 8px 16px; background: #0366d6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;\">Export to PDF</button>");
-            sb.AppendLine("        </div>");
-            sb.AppendLine("        <table class=\"service-table\">");
-            sb.AppendLine("            <thead><tr><th>Project / Service</th><th>Coverable Lines</th><th>Covered Lines</th><th>Coverage %</th></tr></thead>");
-            sb.AppendLine("            <tbody>");
-            foreach (var stat in serviceStats.OrderByDescending(s => s.Value.coverable))
+            if (showSummary)
             {
-                double pct = stat.Value.coverable > 0 ? (double)stat.Value.covered / stat.Value.coverable * 100 : 0;
-                string sColor = pct == 100 ? "#28a745" : (pct >= 50 ? "#d97706" : "#cb2431");
-                sb.AppendLine("                <tr>");
-                sb.AppendLine($"                    <td style=\"font-weight: 600;\">{System.Net.WebUtility.HtmlEncode(stat.Key)}</td>");
-                sb.AppendLine($"                    <td>{stat.Value.coverable}</td>");
-                sb.AppendLine($"                    <td>{stat.Value.covered}</td>");
-                sb.AppendLine($"                    <td style=\"color: {sColor}; font-weight: bold;\">{pct:F2}%</td>");
-                sb.AppendLine("                </tr>");
-            }
-            sb.AppendLine("            </tbody>");
-            sb.AppendLine("        </table>");
-            sb.AppendLine("    </div>");
+                if (!summaryOnly)
+                {
+                    // Tabbed header â€” file detail tab + summary tab
+                    sb.AppendLine("    <div class=\"tabs no-print\">");
+                    sb.AppendLine("        <button class=\"tab-btn active\" onclick=\"switchTab('fileTab', this)\">File Detail View</button>");
+                    sb.AppendLine("        <button class=\"tab-btn\" onclick=\"switchTab('summaryTab', this)\">Project / Service Summary</button>");
+                    sb.AppendLine("    </div>");
+                }
 
-            sb.AppendLine("    <div id=\"fileTab\" class=\"tab-content active\">");
-            sb.AppendLine("    <div style=\"margin-bottom: 20px;\">");
+                sb.AppendLine("    <div id=\"summaryTab\" class=\"tab-content\" style=\"display:block;\">");
+                sb.AppendLine("        <div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;\">");
+                sb.AppendLine("            <h2 style=\"margin: 0;\">Service Coverage Overview</h2>");
+                sb.AppendLine("            <button class=\"no-print\" onclick=\"window.print()\" style=\"padding: 8px 16px; background: #0366d6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;\">Export to PDF</button>");
+                sb.AppendLine("        </div>");
+                sb.AppendLine("        <table class=\"service-table\">");
+                sb.AppendLine("            <thead><tr><th>Project / Service</th><th>Coverable Lines</th><th>Covered Lines</th><th>Coverage %</th></tr></thead>");
+                sb.AppendLine("            <tbody>");
+                foreach (var stat in serviceStats.OrderByDescending(s => s.Value.coverable))
+                {
+                    double pct = stat.Value.coverable > 0 ? (double)stat.Value.covered / stat.Value.coverable * 100 : 0;
+                    string sColor = pct == 100 ? "#28a745" : (pct >= 50 ? "#d97706" : "#cb2431");
+                    sb.AppendLine("                <tr>");
+                    sb.AppendLine($"                    <td style=\"font-weight: 600;\">{System.Net.WebUtility.HtmlEncode(stat.Key)}</td>");
+                    sb.AppendLine($"                    <td>{stat.Value.coverable}</td>");
+                    sb.AppendLine($"                    <td>{stat.Value.covered}</td>");
+                    sb.AppendLine($"                    <td style=\"color: {sColor}; font-weight: bold;\">{pct:F2}%</td>");
+                    sb.AppendLine("                </tr>");
+                }
+                sb.AppendLine("            </tbody>");
+                sb.AppendLine("        </table>");
+                sb.AppendLine("    </div>");
+            }
+
+            // In summary-only mode, stop here â€” do NOT render per-file detail section
+            if (summaryOnly)
+            {
+                sb.AppendLine("</body></html>");
+                File.WriteAllText(reportPath, sb.ToString());
+                Console.WriteLine($"Report saved to: {reportPath}");
+                return;
+            }
+
+            // File detail section
+            if (showSummary)
+                sb.AppendLine("    <div id=\"fileTab\" class=\"tab-content active\">");
+            else
+                sb.AppendLine("    <div id=\"fileTab\">");
             sb.AppendLine("        <label for=\"fileSearch\" style=\"font-weight: bold; margin-right: 10px;\">Search / Filter File:</label>");
             sb.AppendLine("        <input list=\"file-list\" id=\"fileSearch\" placeholder=\"Type to search a file...\" style=\"padding: 8px; width: 300px; border: 1px solid #d1d5da; border-radius: 4px;\">");
             sb.AppendLine("        <datalist id=\"file-list\">");
@@ -294,3 +317,4 @@ namespace DiffCoverageTool
         }
     }
 }
+

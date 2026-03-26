@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,7 +26,7 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
                 radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
         }
@@ -46,6 +47,7 @@
             font-weight: 800;
             background: linear-gradient(to right, #60a5fa, #c084fc);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -84,7 +86,8 @@
             letter-spacing: 0.05em;
         }
 
-        input, select {
+        input,
+        select {
             background: rgba(15, 23, 42, 0.5);
             border: 1px solid var(--glass-border);
             border-radius: 8px;
@@ -96,7 +99,8 @@
             transition: all 0.3s ease;
         }
 
-        input:focus, select:focus {
+        input:focus,
+        select:focus {
             border-color: var(--primary);
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
         }
@@ -157,21 +161,46 @@
             font-weight: 600;
         }
 
-        .status-idle { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
-        .status-running { background: rgba(59, 130, 246, 0.2); color: #93c5fd; animation: pulse 1.5s infinite; }
-        .status-success { background: rgba(34, 197, 94, 0.2); color: #86efac; }
-        .status-error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .status-idle {
+            background: rgba(148, 163, 184, 0.2);
+            color: #cbd5e1;
+        }
+
+        .status-running {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
 
         @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.6; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
 
         .iframe-container {
             flex: 1;
             width: 100%;
-            background: white; /* HTML report assumes light mode for now */
+            background: white;
+            /* HTML report assumes light mode for now */
         }
 
         iframe {
@@ -200,7 +229,7 @@
 
         .loader {
             display: none;
-            border: 3px solid rgba(255,255,255,0.1);
+            border: 3px solid rgba(255, 255, 255, 0.1);
             border-top: 3px solid white;
             border-radius: 50%;
             width: 24px;
@@ -210,12 +239,17 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+            0% {
+                transform: rotate(0deg);
+            }
 
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
+
 <body>
 
     <header>
@@ -239,7 +273,17 @@
                 </select>
             </div>
 
-            <button id="btnFetch" onclick="fetchCommits()" style="padding: 0.8rem; font-size: 1rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; box-shadow: none;">
+            <div class="form-group">
+                <label for="reportModeSelect">Report Mode</label>
+                <select id="reportModeSelect">
+                    <option value="detail-only">File Detail Only</option>
+                    <option value="detail-and-summary">File Detail + Service Summary</option>
+                    <option value="summary-only">Summary Only</option>
+                </select>
+            </div>
+
+            <button id="btnFetch" onclick="fetchCommits()"
+                style="padding: 0.8rem; font-size: 1rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; box-shadow: none;">
                 Load Commits
             </button>
 
@@ -271,10 +315,36 @@
                 </div>
             </div>
 
-            <button id="btnRun" onclick="runCoverage()" disabled style="margin-top: 1rem;">
-                <span id="btnRunText">Run Test Cases & Analysis</span>
-                <div class="loader" id="btnRunLoader"></div>
-            </button>
+            <!-- Services Checkbox Section -->
+            <div id="servicesSection" style="display:none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label
+                        style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Services</label>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="selectAllServices(true)"
+                            style="background: none; border: none; color: #60a5fa; font-size: 0.78rem; cursor: pointer; padding: 2px 4px; box-shadow: none;">All</button>
+                        <button onclick="selectAllServices(false)"
+                            style="background: none; border: none; color: #94a3b8; font-size: 0.78rem; cursor: pointer; padding: 2px 4px; box-shadow: none;">None</button>
+                    </div>
+                </div>
+                <div id="servicesList"
+                    style="max-height: 180px; overflow-y: auto; background: rgba(15,23,42,0.5); border: 1px solid var(--glass-border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px;">
+                    <!-- checkboxes injected here -->
+                </div>
+            </div>
+
+
+            <div style="display: flex; gap: 10px; margin-top: 1rem;">
+                <button id="btnRun" onclick="runCoverage()" disabled style="flex: 1;">
+                    <span id="btnRunText">Run Test Cases</span>
+                    <div class="loader" id="btnRunLoader"></div>
+                </button>
+                <button id="btnClear" onclick="clearReports()"
+                    style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: none;">
+                    Clear
+                </button>
+            </div>
+
         </div>
 
         <!-- Results Panel -->
@@ -283,11 +353,16 @@
                 <div style="font-weight: 600;">Coverage Report Viewer</div>
                 <div id="statusBadge" class="status-badge status-idle">Idle</div>
             </div>
-            
+
             <div id="emptyState" class="empty-state">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
                 <h2>No Report Generated Yet</h2>
-                <p>Select a repository path, pick a target commit, and run the analysis to view coverage details here.</p>
+                <p>Select a repository path, pick a target commit, and run the analysis to view coverage details here.
+                </p>
             </div>
 
             <div class="iframe-container" id="iframeContainer" style="display: none;">
@@ -303,7 +378,7 @@
             const mode = document.querySelector('input[name="covMode"]:checked').value;
             const commitSection = document.getElementById('commitSection');
             const btnRun = document.getElementById('btnRun');
-            
+
             if (mode === 'full') {
                 commitSection.style.display = 'none';
                 if (document.getElementById('repoPath').value.trim() !== '') {
@@ -318,25 +393,24 @@
         }
 
         async function fetchCommits() {
-            const path = document.getElementById('repoPath').value.trim();
-            if (!path) return alert("Please enter a repository path.");
+            const repoPath = document.getElementById('repoPath').value.trim();
+            if (!repoPath) return alert("Please enter a repository path.");
 
             const btn = document.getElementById('btnFetch');
             btn.textContent = "Loading...";
-            
+
             try {
-                const res = await fetch(`${API_BASE}/commits?path=${encodeURIComponent(path)}`);
+                const res = await fetch(`${API_BASE}/commits?path=${encodeURIComponent(repoPath)}`);
                 const data = await res.json();
-                
+
                 if (!res.ok) throw new Error(data.error || 'Failed to fetch commits');
 
                 const baseSelect = document.getElementById('baseCommitSelect');
                 const targetSelect = document.getElementById('targetCommitSelect');
-                
+
                 baseSelect.innerHTML = '';
                 targetSelect.innerHTML = '';
-                
-                // Add Uncommitted Option to Target
+
                 const uncommittedOpt = document.createElement('option');
                 uncommittedOpt.value = 'UNCOMMITTED';
                 uncommittedOpt.textContent = '[ Uncommitted Changes (Working Tree) ]';
@@ -348,7 +422,6 @@
                     targetSelect.insertAdjacentHTML('beforeend', optionHTML);
                 });
 
-                // Default base to the second commit if available, and target to uncommitted
                 if (data.commits.length > 0) {
                     baseSelect.value = data.commits[0].hash;
                 }
@@ -359,17 +432,55 @@
                 btn.textContent = "Commits Loaded ✓";
                 setTimeout(() => btn.textContent = "Refresh Commits", 2000);
 
+                // Auto-discover services after commits load
+                await discoverServices(repoPath);
+
             } catch (err) {
                 alert(err.message);
                 btn.textContent = "Load Commits";
             }
         }
 
+        async function discoverServices(repoPath) {
+            const framework = document.getElementById('projectTypeSelect').value;
+            try {
+                const res = await fetch(`${API_BASE}/discover-services?path=${encodeURIComponent(repoPath)}&framework=${framework}`);
+                const data = await res.json();
+                const services = data.services || [];
+                const list = document.getElementById('servicesList');
+                const section = document.getElementById('servicesSection');
+
+                if (services.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+
+                list.innerHTML = '';
+                services.forEach(svc => {
+                    const id = `svc_${Math.random().toString(36).substr(2, 8)}`;
+                    const item = document.createElement('label');
+                    item.style.cssText = 'display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; padding:4px 6px; border-radius:4px; transition:background 0.15s;';
+                    item.innerHTML = `<input type="checkbox" id="${id}" value="${svc.path}" checked style="accent-color:#3b82f6; width:14px; height:14px;"> <span title="${svc.path}">${svc.name}</span>`;
+                    item.onmouseenter = () => item.style.background = 'rgba(59,130,246,0.1)';
+                    item.onmouseleave = () => item.style.background = '';
+                    list.appendChild(item);
+                });
+
+                section.style.display = 'block';
+            } catch (e) {
+                // silently skip — service discovery is optional
+            }
+        }
+
+        function selectAllServices(checked) {
+            document.querySelectorAll('#servicesList input[type=checkbox]').forEach(cb => cb.checked = checked);
+        }
+
         async function runCoverage() {
             const path = document.getElementById('repoPath').value.trim();
             const projectType = document.getElementById('projectTypeSelect').value;
             const mode = document.querySelector('input[name="covMode"]:checked').value;
-            
+
             let baseRef = 'FULL_COVERAGE';
             let targetRef = 'FULL_COVERAGE';
 
@@ -381,28 +492,35 @@
                 if (!path) return;
             }
 
+            // Collect selected service paths (null = ALL if section hidden)
+            const serviceCheckboxes = document.querySelectorAll('#servicesList input[type=checkbox]');
+            const selectedProjects = serviceCheckboxes.length > 0
+                ? Array.from(serviceCheckboxes).filter(cb => cb.checked).map(cb => cb.value)
+                : [];
+
             const btn = document.getElementById('btnRun');
             const btnText = document.getElementById('btnRunText');
             const loader = document.getElementById('btnRunLoader');
             const statusBadge = document.getElementById('statusBadge');
-            
+
             btn.disabled = true;
             btnText.style.display = 'none';
             loader.style.display = 'block';
-            
+
             statusBadge.className = 'status-badge status-running';
             statusBadge.textContent = 'Running Analysis...';
-            
+
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('iframeContainer').style.display = 'none';
 
             try {
+                const reportMode = document.getElementById('reportModeSelect').value;
                 const res = await fetch(`${API_BASE}/run-coverage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ repoPath: path, baseRef, targetRef, projectType })
+                    body: JSON.stringify({ repoPath: path, baseRef, targetRef, projectType, reportMode, selectedProjects })
                 });
-                
+
                 const data = await res.json();
 
                 if (!res.ok) throw new Error(data.error || 'Coverage run failed');
@@ -420,7 +538,7 @@
 
             } catch (err) {
                 alert("Error: " + err.message);
-                
+
                 document.getElementById('emptyState').style.display = 'flex';
                 statusBadge.className = 'status-badge status-error';
                 statusBadge.textContent = 'Failed';
@@ -430,6 +548,46 @@
                 loader.style.display = 'none';
             }
         }
+
+        async function clearReports() {
+            const path = document.getElementById('repoPath').value.trim();
+            if (!path) return alert('Please enter the repository path first!');
+
+            if (!confirm('Are you strictly sure you want to completely erase all physical TestResults XML and HTML generated coverage traces locally?')) return;
+
+            try {
+                const btn = document.getElementById('btnClear');
+                btn.innerText = '...';
+                btn.disabled = true;
+
+                const response = await fetch(`${API_BASE}/clear-reports`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repoPath: path })
+                });
+
+                if (response.ok) {
+                    // Visually reset layout
+                    document.getElementById('reportFrame').src = 'about:blank';
+                    document.getElementById('iframeContainer').style.display = 'none';
+                    document.getElementById('emptyState').style.display = 'flex';
+
+                    const statusBadge = document.getElementById('statusBadge');
+                    statusBadge.className = 'status-badge status-idle';
+                    statusBadge.textContent = 'Cleared ✓';
+                } else {
+                    const error = await response.json();
+                    alert("Failure executing memory cleanse: " + error.error);
+                }
+            } catch (err) {
+                alert("Critical Execution Error: " + err.message);
+            } finally {
+                const btn = document.getElementById('btnClear');
+                btn.innerText = 'Clear';
+                btn.disabled = false;
+            }
+        }
     </script>
 </body>
+
 </html>

@@ -36,18 +36,61 @@ app.get('/api/commits', (req, res) => {
     });
 });
 
+// Endpoint to scan for available services/projects in a folder
+app.get('/api/discover-services', (req, res) => {
+    const { path: repoPath, framework = 'dotnet' } = req.query;
+    if (!repoPath || !fs.existsSync(repoPath)) {
+        return res.status(400).json({ error: 'Invalid or missing repository path.' });
+    }
+
+    const skipDirs = new Set(['node_modules', '.git', 'bin', 'obj', '.vs']);
+
+    const walkDir = (dir, depth = 0) => {
+        if (depth > 8) return [];
+        let results = [];
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                if (skipDirs.has(entry.name)) continue;
+                const fullPath = path.join(dir, entry.name);
+                results = results.concat(walkDir(fullPath, depth + 1));
+            }
+            // Check this directory itself
+            const pattern = framework === 'angular' ? 'package.json' : '*.csproj';
+            const files = fs.readdirSync(dir).filter(f => {
+                if (framework === 'angular') return f === 'package.json';
+                return f.endsWith('.csproj');
+            });
+            for (const f of files) {
+                const name = framework === 'angular' ? path.basename(dir) : f.replace('.csproj', '');
+                results.push({ name, path: dir, file: f });
+            }
+        } catch (e) { /* skip permission errors */ }
+        return results;
+    };
+
+    const services = walkDir(repoPath);
+    // Deduplicate by path
+    const seen = new Set();
+    const unique = services.filter(s => {
+        if (seen.has(s.path)) return false;
+        seen.add(s.path);
+        return true;
+    });
+    res.json({ services: unique });
+});
+
 // Endpoint to run coverage tool
 app.post('/api/run-coverage', (req, res) => {
-    const { repoPath, baseRef, targetRef, projectType = 'dotnet' } = req.body;
+    const { repoPath, baseRef, targetRef, projectType = 'dotnet', reportMode = 'detail-only', selectedProjects = [] } = req.body;
     
     if (!repoPath || !fs.existsSync(repoPath) || !baseRef || !targetRef) {
         return res.status(400).json({ error: 'Invalid payload. Ensure repo path, baseRef, and targetRef are provided.' });
     }
 
-    // Determine the DiffCoverageTool CSPROJ path relative to the dashboard directory
     const csprojPath = path.resolve(__dirname, '../DiffCoverageTool/DiffCoverageTool.csproj');
     
-    // Construct the diff parameter: baseHash or baseHash..targetHash
     let diffArg = '';
     if (baseRef === 'FULL_COVERAGE') {
         diffArg = 'FULL_COVERAGE';
@@ -55,8 +98,13 @@ app.post('/api/run-coverage', (req, res) => {
         diffArg = targetRef === 'UNCOMMITTED' ? baseRef : `${baseRef}..${targetRef}`;
     }
 
-    // Command: dotnet run --project <csproj> <repoPath> <diffArg> <projectType>
-    const runCmd = `dotnet run --project "${csprojPath}" "${repoPath}" "${diffArg}" "${projectType}"`;
+    // selectedProjects: pipe-separated paths, or "ALL" if none selected (run everything)
+    const projectsArg = (selectedProjects && selectedProjects.length > 0)
+        ? selectedProjects.join('|')
+        : 'ALL';
+
+    // args: repoPath diffArg projectType selectedProjects reportMode
+    const runCmd = `dotnet run --project "${csprojPath}" "${repoPath}" "${diffArg}" "${projectType}" "${projectsArg}" "${reportMode}"`;
 
     exec(runCmd, { cwd: repoPath }, (error, stdout, stderr) => {
         // Output might just be warnings or exit code 1 if tests fail, but report might still generate.
@@ -76,6 +124,53 @@ app.post('/api/run-coverage', (req, res) => {
             });
         }
     });
+});
+
+// Endpoint to aggressively clear locally generated report logs inside repo directories automatically
+app.post('/api/clear-reports', (req, res) => {
+    try {
+        const { repoPath } = req.body;
+        
+        // Target: Local dashboard HTML artifact
+        const localReport = path.resolve(process.cwd(), '../coverage_report.html');
+        if (fs.existsSync(localReport)) {
+            fs.unlinkSync(localReport);
+        }
+
+        // Target: Selected repository cache targets natively via Javascript Recursion securely
+        const deleteFolderRecursive = (dirPath) => {
+            if (fs.existsSync(dirPath)) {
+                const dirents = fs.readdirSync(dirPath, { withFileTypes: true });
+                for (const dirent of dirents) {
+                    const fullPath = path.join(dirPath, dirent.name);
+                    if (dirent.isDirectory()) {
+                        if (dirent.name === 'TestResults' || dirent.name === 'coverage') {
+                            fs.rmSync(fullPath, { recursive: true, force: true });
+                        } else {
+                            // strictly exclude node_modules or system stores from intensive recursion
+                            if (dirent.name !== 'node_modules' && dirent.name !== '.git' && dirent.name !== 'bin' && dirent.name !== 'obj') {
+                                deleteFolderRecursive(fullPath);
+                            }
+                        }
+                    } else if (dirent.isFile()) {
+                        // aggressively eliminate any XML traces generated outside the TestResults folders
+                        if (dirent.name === 'coverage.cobertura.xml' || dirent.name === 'coverage_report.html') {
+                            fs.unlinkSync(fullPath);
+                        }
+                    }
+                }
+            }
+        };
+
+        if (repoPath && fs.existsSync(repoPath)) {
+            deleteFolderRecursive(repoPath);
+        }
+
+        res.json({ message: 'All local Dashboard traces and TestResults folders have been physically eliminated.' });
+    } catch (error) {
+        console.error("Error clearing local footprints:", error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 app.listen(PORT, () => {
