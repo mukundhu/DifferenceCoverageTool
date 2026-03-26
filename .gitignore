@@ -1,3 +1,6 @@
 DiffCoverageTool/bin
 DiffCoverageTool/obj
 /.vs
+dashboard/node_modules
+TestResults/coverage.cobertura.xml
+coverage_report.html

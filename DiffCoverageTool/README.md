@@ -1,47 +1,58 @@
 # DiffCoverageTool
 
-A .NET CLI tool that determines unit test code coverage specifically for **newly added or modified code** since a given commit. This helps ensure that new changes are adequately tested without being skewed by the overall project coverage percentage.
+A highly flexible .NET CLI tool and robust Web Dashboard that determines unit test code coverage specifically for **newly added or modified code** since a given commit, or dynamically generates a master **Full Project Coverage** report for your entire repository natively bypassing Git.
+
+This tool supports both **.NET `dotnet test`** and **Angular `npm run test`** architectures organically out-of-the-box, easily navigating large multi-project repositories securely.
+
+## Core Features 🚀
+- **Multi-Framework Auto-Detect**: Effortlessly toggles between mapping `.NET Core` test coverage and `Angular Karma/Jest` workspaces.
+- **Microservices & Monorepos**: Recursively discovers multiple test projects natively across your entire codebase and logically aggregates their reports in one unified dashboard, separated automatically by `<package name="...">` service definitions.
+- **Full Project Coverage**: Flip a single switch in the Dashboard to map Coverage locally without ever querying your git differentials. 
+- **Uncommitted Changes Tracker**: Check your live modified uncommitted file deltas straight out of the UI organically.
+- **Export to PDF Data Tables**: Cleanly generates professional `.pdf` Data Datatables of your Coverable, Covered, and Output percentage statistics seamlessly grouped natively by Service names.
+- **Fail-Fast Error Dashboards**: Automatically traps, intercepts, and prints raw terminal exceptions (`MSBuild` failures or `karma` syntax traps) right at the top of the HTML console natively if the test engines exit with a non-zero exit code!
 
 ## Prerequisites
 - .NET 8.0 SDK (or whichever version you compiled the tool with)
+- Node.js (v14+ recommended for the Web Dashboard)
 - Git installed and accessible from the command line
-
-## How It Works
-1. Runs `git diff -U0 <base-ref>` to find all added or modified lines in the target repository.
-2. Runs `dotnet test --collect:"XPlat Code Coverage"` on the target repository to generate a Cobertura XML report.
-3. Intersects the modified lines from Git with the coverage metrics from Cobertura to calculate exactly how much of your new code is covered by tests.
 
 ## How to Run
 
-### Option 1: Using `dotnet run` (Recommended for testing)
+### Option 1: Interactive Web Dashboard (Easiest Method)
 
-You can run the tool directly from its source code directory. Open a terminal and navigate to the `DiffCoverageTool` folder, then use `dotnet run`:
+We've added a stunning, interactive Node.js Web Dashboard. It allows you to select your repository path, pick your target commits (including uncommitted files), specify your Framework (`.NET` or `Angular`), and instantly visually inspect the detailed metrics table.
+
+To launch the dashboard natively from the root of this exact repository, effortlessly execute the platform-specific scripts provided:
+
+**Windows:**
+Double-click `start.bat` or run:
+```cmd
+.\start.bat
+```
+
+**Mac/Linux:**
+```bash
+sh start.sh
+```
+*(These scripts automatically install Node.js dependencies and launch the server implicitly via port `3000`. The C# project builds automatically when natively requested by the dashboard backend.)*
+
+### Option 2: Using `dotnet run` (CLI/CI Pipeline Usage)
+
+You can run the engine heavily directly from its standalone core code directory to integrate natively into pipelines. Open a terminal securely inside the `DiffCoverageTool` folder, then seamlessly orchestrate with `dotnet run`:
 
 ```bash
 # Syntax
-dotnet run --project <path-to-DiffCoverageTool.csproj> "<path-to-target-repo>" <base-git-ref>
+dotnet run --project <path-to-DiffCoverageTool.csproj> "<path-to-target-repo>" <base-git-ref> <framework-type>
 
-# Example: Run against your working directory, comparing against your last commit (HEAD~1)
-dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\project" HEAD~1
+# Example: Run Full Coverage analysis dynamically against an Angular web project
+dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\angular-project" FULL_COVERAGE angular
 
-# Example: To check uncommitted changes only against HEAD
-dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\project" HEAD
-```
-
-### Option 2: Build the executable and run it
-
-If you want to compile it into a standalone executable:
-
-```bash
-# Build the tool
-dotnet build -c Release
-
-# Run the compiled executable directly
-.\bin\Release\net8.0\DiffCoverageTool.exe "C:\path\to\your\project" HEAD~1
+# Example: Check uncommitted changes specifically against HEAD inside a NET monolith
+dotnet run --project DiffCoverageTool.csproj "C:\path\to\your\csharp-solution" HEAD dotnet
 ```
 
 ## Troubleshooting
 
-- **"No modified files found"**: This means `git diff -U0 <base-ref>` didn't return any changes. Ensure you have made changes relative to the base reference.
-- **"Could not find coverage.cobertura.xml"**: The tool executes `dotnet test --collect:"XPlat Code Coverage"`. If Coverlet doesn't generate this file, make sure your target project actually has tests and references `coverlet.collector` (which is included by default via `dotnet new xunit`).
-- **"No coverable new lines found"**: If your coverage file is generated but reports 0 lines, ensure that your application code and your test code are in **separate projects** (e.g., `MyApp.Core` and `MyApp.Tests`). By default, Coverlet excludes the assembly containing the tests from coverage reporting.
+- **"No modified files found"**: This means your active `git diff` tracker didn't return any codebase deltas! Ensure you have made changes logically relative to the reference node, or select `Full Project Coverage` to map the entire repository organically instead!
+- **"Could not find coverage.cobertura.xml"**: The engine successfully executed the testing runners, but the respective coverage logfile was missing. If using .NET, make sure the project actively references `coverlet.collector`! If using Angular, securely append `--code-coverage=true` in your root environment architectures!

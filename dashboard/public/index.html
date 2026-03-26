@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiffCoverage Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
+        }
+
+        header {
+            padding: 2rem 4rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--glass-border);
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            padding: 2rem 4rem;
+            gap: 2rem;
+            height: calc(100vh - 100px);
+        }
+
+        .sidebar {
+            width: 350px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(16px);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input, select {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: white;
+            padding: 0.8rem 1rem;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .results-panel {
+            flex: 1;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            backdrop-filter: blur(16px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .results-header {
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-badge {
+            padding: 0.3rem 0.8rem;
+            border-radius: 99px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-idle { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+        .status-running { background: rgba(59, 130, 246, 0.2); color: #93c5fd; animation: pulse 1.5s infinite; }
+        .status-success { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+        .status-error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        .iframe-container {
+            flex: 1;
+            width: 100%;
+            background: white; /* HTML report assumes light mode for now */
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .loader {
+            display: none;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>DiffCoverage Dashboard</h1>
+        <div style="font-size: 0.9rem; color: var(--text-muted);">Real-time code coverage analysis</div>
+    </header>
+
+    <div class="container">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <div class="form-group">
+                <label for="repoPath">Repository Path</label>
+                <input type="text" id="repoPath" placeholder="e.g. C:\Users\name\source\repos\MyProject" value="">
+            </div>
+
+            <div class="form-group">
+                <label for="projectTypeSelect">Framework</label>
+                <select id="projectTypeSelect">
+                    <option value="dotnet">.NET Core</option>
+                    <option value="angular">Angular / Node</option>
+                </select>
+            </div>
+
+            <button id="btnFetch" onclick="fetchCommits()" style="padding: 0.8rem; font-size: 1rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; box-shadow: none;">
+                Load Commits
+            </button>
+
+            <div class="form-group" style="margin-top: 1.5rem;">
+                <label>Coverage Mode</label>
+                <div style="display: flex; gap: 15px; margin-top: 8px;">
+                    <label style="font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="covMode" value="diff" checked onchange="toggleMode()"> Diff Coverage
+                    </label>
+                    <label style="font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="covMode" value="full" onchange="toggleMode()"> Full Project
+                    </label>
+                </div>
+            </div>
+
+            <div id="commitSection">
+                <div class="form-group" style="margin-top: 0.5rem;">
+                    <label for="baseCommitSelect">Base Commit</label>
+                    <select id="baseCommitSelect" disabled>
+                        <option value="">Fetch commits first...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="targetCommitSelect">Target Commit</label>
+                    <select id="targetCommitSelect" disabled>
+                        <option value="">Fetch commits first...</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="btnRun" onclick="runCoverage()" disabled style="margin-top: 1rem;">
+                <span id="btnRunText">Run Test Cases & Analysis</span>
+                <div class="loader" id="btnRunLoader"></div>
+            </button>
+        </div>
+
+        <!-- Results Panel -->
+        <div class="results-panel">
+            <div class="results-header">
+                <div style="font-weight: 600;">Coverage Report Viewer</div>
+                <div id="statusBadge" class="status-badge status-idle">Idle</div>
+            </div>
+            
+            <div id="emptyState" class="empty-state">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <h2>No Report Generated Yet</h2>
+                <p>Select a repository path, pick a target commit, and run the analysis to view coverage details here.</p>
+            </div>
+
+            <div class="iframe-container" id="iframeContainer" style="display: none;">
+                <iframe id="reportFrame"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+
+        function toggleMode() {
+            const mode = document.querySelector('input[name="covMode"]:checked').value;
+            const commitSection = document.getElementById('commitSection');
+            const btnRun = document.getElementById('btnRun');
+            
+            if (mode === 'full') {
+                commitSection.style.display = 'none';
+                if (document.getElementById('repoPath').value.trim() !== '') {
+                    btnRun.disabled = false;
+                }
+            } else {
+                commitSection.style.display = 'block';
+                if (document.getElementById('baseCommitSelect').value === '') {
+                    btnRun.disabled = true; // Wait for fetch
+                }
+            }
+        }
+
+        async function fetchCommits() {
+            const path = document.getElementById('repoPath').value.trim();
+            if (!path) return alert("Please enter a repository path.");
+
+            const btn = document.getElementById('btnFetch');
+            btn.textContent = "Loading...";
+            
+            try {
+                const res = await fetch(`${API_BASE}/commits?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+                
+                if (!res.ok) throw new Error(data.error || 'Failed to fetch commits');
+
+                const baseSelect = document.getElementById('baseCommitSelect');
+                const targetSelect = document.getElementById('targetCommitSelect');
+                
+                baseSelect.innerHTML = '';
+                targetSelect.innerHTML = '';
+                
+                // Add Uncommitted Option to Target
+                const uncommittedOpt = document.createElement('option');
+                uncommittedOpt.value = 'UNCOMMITTED';
+                uncommittedOpt.textContent = '[ Uncommitted Changes (Working Tree) ]';
+                targetSelect.appendChild(uncommittedOpt);
+
+                data.commits.forEach((c, index) => {
+                    const optionHTML = `<option value="${c.hash}">${c.hash.substring(0, 7)} - ${c.message} (${c.time} by ${c.author})</option>`;
+                    baseSelect.insertAdjacentHTML('beforeend', optionHTML);
+                    targetSelect.insertAdjacentHTML('beforeend', optionHTML);
+                });
+
+                // Default base to the second commit if available, and target to uncommitted
+                if (data.commits.length > 0) {
+                    baseSelect.value = data.commits[0].hash;
+                }
+
+                baseSelect.disabled = false;
+                targetSelect.disabled = false;
+                document.getElementById('btnRun').disabled = false;
+                btn.textContent = "Commits Loaded ✓";
+                setTimeout(() => btn.textContent = "Refresh Commits", 2000);
+
+            } catch (err) {
+                alert(err.message);
+                btn.textContent = "Load Commits";
+            }
+        }
+
+        async function runCoverage() {
+            const path = document.getElementById('repoPath').value.trim();
+            const projectType = document.getElementById('projectTypeSelect').value;
+            const mode = document.querySelector('input[name="covMode"]:checked').value;
+            
+            let baseRef = 'FULL_COVERAGE';
+            let targetRef = 'FULL_COVERAGE';
+
+            if (mode === 'diff') {
+                baseRef = document.getElementById('baseCommitSelect').value;
+                targetRef = document.getElementById('targetCommitSelect').value;
+                if (!path || !baseRef || !targetRef) return;
+            } else {
+                if (!path) return;
+            }
+
+            const btn = document.getElementById('btnRun');
+            const btnText = document.getElementById('btnRunText');
+            const loader = document.getElementById('btnRunLoader');
+            const statusBadge = document.getElementById('statusBadge');
+            
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            loader.style.display = 'block';
+            
+            statusBadge.className = 'status-badge status-running';
+            statusBadge.textContent = 'Running Analysis...';
+            
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('iframeContainer').style.display = 'none';
+
+            try {
+                const res = await fetch(`${API_BASE}/run-coverage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repoPath: path, baseRef, targetRef, projectType })
+                });
+                
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error || 'Coverage run failed');
+
+                // Inject HTML into iframe
+                const iframe = document.getElementById('reportFrame');
+                const doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write(data.htmlContent);
+                doc.close();
+
+                document.getElementById('iframeContainer').style.display = 'block';
+                statusBadge.className = 'status-badge status-success';
+                statusBadge.textContent = 'Analysis Complete';
+
+            } catch (err) {
+                alert("Error: " + err.message);
+                
+                document.getElementById('emptyState').style.display = 'flex';
+                statusBadge.className = 'status-badge status-error';
+                statusBadge.textContent = 'Failed';
+            } finally {
+                btn.disabled = false;
+                btnText.style.display = 'block';
+                loader.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
