@@ -49,11 +49,31 @@ namespace DiffCoverageTool
                     testOutput = result.output;
                 }
 
-                // Find coverage.cobertura.xml
+                // Find coverage.cobertura.xml (also try coverage.xml as some versions use that name)
                 var coverageFiles = Directory.GetFiles(repoPath, "coverage.cobertura.xml", SearchOption.AllDirectories);
                 if (coverageFiles.Length == 0)
+                    coverageFiles = Directory.GetFiles(repoPath, "coverage.xml", SearchOption.AllDirectories);
+
+                if (coverageFiles.Length == 0)
                 {
-                    Console.WriteLine("Could not find coverage.cobertura.xml. Ensure tests have coverage enabled.");
+                    // Emit diagnostic info — list everything under TestResults dirs to help identify the issue
+                    Console.WriteLine("Could not find coverage.cobertura.xml. Ensure tests have the 'coverlet.collector' NuGet package installed.");
+                    Console.WriteLine("Tip: add <PackageReference Include=\"coverlet.collector\" Version=\"6.0.2\" /> to your test project.");
+                    var testResultsDirs = Directory.GetDirectories(repoPath, "TestResults", SearchOption.AllDirectories);
+                    if (testResultsDirs.Length == 0)
+                    {
+                        Console.WriteLine("No TestResults directories were found — dotnet test may not have run successfully.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("TestResults directories found:");
+                        foreach (var dir in testResultsDirs)
+                        {
+                            Console.WriteLine($"  {dir}");
+                            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                                Console.WriteLine($"    {f}");
+                        }
+                    }
                     return 1;
                 }
                 
@@ -100,6 +120,106 @@ namespace DiffCoverageTool
             }
         }
 
+        // Checks if dotnet-coverage is available; if not, installs it automatically.
+        static bool EnsureDotnetCoverageInstalled()
+        {
+            if (IsDotnetCoverageRunnable())
+                return true;
+
+            Console.WriteLine("  dotnet-coverage not found. Installing automatically via 'dotnet tool install --global dotnet-coverage'...");
+            try
+            {
+                var si = new ProcessStartInfo("dotnet", "tool install --global dotnet-coverage")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                };
+                var p = Process.Start(si);
+                string installOut = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                p.WaitForExit();
+
+                if (p.ExitCode == 0)
+                {
+                    Console.WriteLine("  dotnet-coverage installed successfully.");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"  Failed to install dotnet-coverage: {installOut}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  Error installing dotnet-coverage: {ex.Message}");
+                return false;
+            }
+        }
+
+        static bool IsDotnetCoverageRunnable()
+        {
+            try
+            {
+                var si = new ProcessStartInfo("dotnet-coverage", "--version")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                };
+                var p = Process.Start(si);
+                p.WaitForExit();
+                return p.ExitCode == 0;
+            }
+            catch { return false; }
+        }
+
+        // Run dotnet test for a single path, using dotnet-coverage when available (no package ref needed)
+        // or fallback to XPlat Code Coverage collector.
+        static (bool success, string output) RunDotnetTestForPath(string executionPath)
+        {
+            string resultsDir = Path.Combine(executionPath, "TestResults");
+            Directory.CreateDirectory(resultsDir);
+            string coberturaOut = Path.Combine(resultsDir, "coverage.cobertura.xml");
+
+            ProcessStartInfo startInfo;
+
+            if (EnsureDotnetCoverageInstalled())
+            {
+                // dotnet-coverage collect wraps dotnet test — no NuGet package needed in the target project
+                Console.WriteLine($"  Using dotnet-coverage collect (no package refs required).");
+                startInfo = new ProcessStartInfo(
+                    "dotnet-coverage",
+                    $"collect \"dotnet test\" --output \"{coberturaOut}\" --output-format cobertura")
+                {
+                    WorkingDirectory = executionPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                };
+            }
+            else
+            {
+                // Fallback: XPlat Code Coverage — requires coverlet.collector in the test project
+                Console.WriteLine($"  dotnet-coverage not found, falling back to --collect:\"XPlat Code Coverage\".");
+                Console.WriteLine($"  If this fails, install it: dotnet tool install --global dotnet-coverage");
+                startInfo = new ProcessStartInfo(
+                    "dotnet",
+                    $"test --collect:\"XPlat Code Coverage\" --results-directory \"{resultsDir}\" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura")
+                {
+                    WorkingDirectory = executionPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                };
+            }
+
+            var process = Process.Start(startInfo);
+            string procOutput = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            return (process.ExitCode == 0, procOutput);
+        }
+
         static (bool success, string output) RunDotnetTest(string repoPath, HashSet<string> selectedPaths = null)
         {
             Console.WriteLine("Scanning for .NET projects/solutions...");
@@ -144,18 +264,9 @@ namespace DiffCoverageTool
                 Console.WriteLine($"Running dotnet test in: {executionPath}");
                 try
                 {
-                    var startInfo = new ProcessStartInfo("dotnet", "test --collect:\"XPlat Code Coverage\"")
-                    {
-                        WorkingDirectory = executionPath,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false
-                    };
-                    var process = Process.Start(startInfo);
-                    string procOutput = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
-                    process.WaitForExit();
-                    
-                    if (process.ExitCode != 0)
+                    var (exitedOk, procOutput) = RunDotnetTestForPath(executionPath);
+                        
+                    if (!exitedOk)
                     {
                         allSuccess = false;
                         combinedOutput += $"=== FAILED: {executionPath} ===\n{procOutput}\n\n";
