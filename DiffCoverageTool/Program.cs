@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace DiffCoverageTool
 {
@@ -174,87 +175,138 @@ namespace DiffCoverageTool
             catch { return false; }
         }
 
-        // Run dotnet test for a single path, using dotnet-coverage when available (no package ref needed)
-        // or fallback to XPlat Code Coverage collector.
+        // Run dotnet test for a single path.
+        // Strategy 1 (preferred): dotnet test --collect:"XPlat Code Coverage"
+        // Strategy 2 (fallback):  dotnet-coverage collect (no package refs needed in target project)
         static (bool success, string output) RunDotnetTestForPath(string executionPath)
         {
             string resultsDir = Path.Combine(executionPath, "TestResults");
             Directory.CreateDirectory(resultsDir);
+
+            // --- Strategy 1: XPlat Code Coverage ---
+            Console.WriteLine($"  Trying dotnet test --collect:\"XPlat Code Coverage\"...");
+            var xplatInfo = new ProcessStartInfo(
+                "dotnet",
+                $"test --collect:\"XPlat Code Coverage\" --results-directory \"{resultsDir}\" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura")
+            {
+                WorkingDirectory = executionPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            var xplatProc = Process.Start(xplatInfo);
+            string xplatOutput = xplatProc.StandardOutput.ReadToEnd() + "\n" + xplatProc.StandardError.ReadToEnd();
+            xplatProc.WaitForExit();
+
+            // Check if a cobertura XML was actually produced
+            var xmlFiles = Directory.GetFiles(resultsDir, "coverage.cobertura.xml", SearchOption.AllDirectories);
+            if (xmlFiles.Length > 0)
+            {
+                Console.WriteLine($"  XPlat Code Coverage succeeded.");
+                return (xplatProc.ExitCode == 0, xplatOutput);
+            }
+
+            // --- Strategy 2: dotnet-coverage collect (auto-installs if missing) ---
+            Console.WriteLine($"  XPlat did not produce coverage.cobertura.xml (coverlet.collector may not be installed).");
+            Console.WriteLine($"  Falling back to dotnet-coverage collect...");
+
+            if (!EnsureDotnetCoverageInstalled())
+            {
+                // Both strategies failed — return xplat output for diagnostics
+                return (false, xplatOutput + "\n[Fallback] dotnet-coverage could not be installed.");
+            }
+
             string coberturaOut = Path.Combine(resultsDir, "coverage.cobertura.xml");
-
-            ProcessStartInfo startInfo;
-
-            if (EnsureDotnetCoverageInstalled())
+            var dcInfo = new ProcessStartInfo(
+                "cmd.exe",
+                $"/c dotnet-coverage collect --output \"{coberturaOut}\" --output-format cobertura dotnet test")
             {
-                // dotnet-coverage collect wraps dotnet test — no NuGet package needed in the target project
-                Console.WriteLine($"  Using dotnet-coverage collect (no package refs required).");
-                startInfo = new ProcessStartInfo(
-                    "dotnet-coverage",
-                    $"collect \"dotnet test\" --output \"{coberturaOut}\" --output-format cobertura")
-                {
-                    WorkingDirectory = executionPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                };
-            }
-            else
-            {
-                // Fallback: XPlat Code Coverage — requires coverlet.collector in the test project
-                Console.WriteLine($"  dotnet-coverage not found, falling back to --collect:\"XPlat Code Coverage\".");
-                Console.WriteLine($"  If this fails, install it: dotnet tool install --global dotnet-coverage");
-                startInfo = new ProcessStartInfo(
-                    "dotnet",
-                    $"test --collect:\"XPlat Code Coverage\" --results-directory \"{resultsDir}\" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura")
-                {
-                    WorkingDirectory = executionPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                };
-            }
+                WorkingDirectory = executionPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            var dcProc = Process.Start(dcInfo);
+            string dcOutput = dcProc.StandardOutput.ReadToEnd() + "\n" + dcProc.StandardError.ReadToEnd();
+            dcProc.WaitForExit();
+            return (dcProc.ExitCode == 0, xplatOutput + "\n" + dcOutput);
+        }
 
-            var process = Process.Start(startInfo);
-            string procOutput = process.StandardOutput.ReadToEnd() + "\n" + process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return (process.ExitCode == 0, procOutput);
+        // Returns true if the .csproj file is a test project — by name OR by content (xunit/nunit/mstest refs)
+        static bool IsTestCsproj(string csprojPath)
+        {
+            string name = Path.GetFileNameWithoutExtension(csprojPath);
+            if (Regex.IsMatch(name, @"\.(tests?|specs?|unittests?|integrationtests?)$", RegexOptions.IgnoreCase))
+                return true;
+            try
+            {
+                string content = File.ReadAllText(csprojPath);
+                return content.Contains("xunit", StringComparison.OrdinalIgnoreCase)
+                    || content.Contains("nunit", StringComparison.OrdinalIgnoreCase)
+                    || content.Contains("mstest", StringComparison.OrdinalIgnoreCase)
+                    || content.Contains("Microsoft.NET.Test.Sdk", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
         }
 
         static (bool success, string output) RunDotnetTest(string repoPath, HashSet<string> selectedPaths = null)
         {
-            Console.WriteLine("Scanning for .NET projects/solutions...");
-            
-            List<string> runPaths = new List<string>();
+            Console.WriteLine("Scanning for .NET test projects...");
 
-            // Only use the .sln shortcut when the user hasn't made a specific service selection.
-            // If selectedPaths is set, we must scan for individual .csproj dirs so paths can match.
-            var slnFiles = Directory.GetFiles(repoPath, "*.sln", SearchOption.TopDirectoryOnly);
-            if (slnFiles.Length > 0 && selectedPaths == null)
+            // Collect ALL test .csproj files in the repo (by name OR by content)
+            var allTestCsprojs = Directory.GetFiles(repoPath, "*.csproj", SearchOption.AllDirectories)
+                .Where(f => !f.Replace('\\', '/').Contains("/obj/") && !f.Replace('\\', '/').Contains("/bin/"))
+                .Where(IsTestCsproj)
+                .ToList();
+
+            if (allTestCsprojs.Count == 0)
             {
-                runPaths.Add(repoPath);
+                return (false, "No test projects found. Ensure test projects reference xunit, nunit, mstest, or Microsoft.NET.Test.Sdk.");
+            }
+
+            // Distinct directories that contain test projects
+            var allTestDirs = allTestCsprojs
+                .Select(f => Path.GetFullPath(Path.GetDirectoryName(f)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            List<string> runPaths;
+
+            if (selectedPaths == null || selectedPaths.Count == 0)
+            {
+                // No service filter — run all test projects
+                runPaths = allTestDirs;
             }
             else
             {
-                var csprojFiles = Directory.GetFiles(repoPath, "*test*.csproj", SearchOption.AllDirectories);
-                if (csprojFiles.Length == 0)
-                    csprojFiles = Directory.GetFiles(repoPath, "*.csproj", SearchOption.AllDirectories);
-                
-                foreach (var proj in csprojFiles)
-                    runPaths.Add(Path.GetFullPath(Path.GetDirectoryName(proj)));
-                runPaths = runPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                // Map selected SERVICE paths → their corresponding test project dirs.
+                // A test project "matches" a service if its directory name contains the service directory name.
+                // e.g. service: MyService  → matches: MyService.Tests, MyService.UnitTests, etc.
+                var normalizedSelected = selectedPaths
+                    .Select(p => Path.GetFullPath(p))
+                    .ToList();
+
+                runPaths = allTestDirs.Where(testDir =>
+                {
+                    string testDirName = Path.GetFileName(testDir);
+                    return normalizedSelected.Any(svcPath =>
+                    {
+                        string svcName = Path.GetFileName(svcPath);
+                        // Match if the test dir name starts with or contains the service name (case-insensitive)
+                        return testDirName.StartsWith(svcName, StringComparison.OrdinalIgnoreCase)
+                            || testDirName.Contains(svcName, StringComparison.OrdinalIgnoreCase);
+                    });
+                }).ToList();
+
+                if (runPaths.Count == 0)
+                {
+                    Console.WriteLine("Warning: No test projects matched the selected services by name. Running all test projects.");
+                    runPaths = allTestDirs;
+                }
             }
 
-            // Filter: normalize selected paths too so case/trailing-slash differences don't cause mismatches
-            if (selectedPaths != null && selectedPaths.Count > 0)
-            {
-                var normalizedSelected = new HashSet<string>(
-                    selectedPaths.Select(p => Path.GetFullPath(p)),
-                    StringComparer.OrdinalIgnoreCase);
-                runPaths = runPaths.Where(p => normalizedSelected.Contains(Path.GetFullPath(p))).ToList();
-            }
-
-            if (runPaths.Count == 0)
-                return (false, "No matching projects found for the selected services.");
+            Console.WriteLine($"Found {runPaths.Count} test project(s) to run:");
+            foreach (var p in runPaths) Console.WriteLine($"  {p}");
 
             bool allSuccess = true;
             string combinedOutput = "";
@@ -265,7 +317,7 @@ namespace DiffCoverageTool
                 try
                 {
                     var (exitedOk, procOutput) = RunDotnetTestForPath(executionPath);
-                        
+
                     if (!exitedOk)
                     {
                         allSuccess = false;
@@ -282,6 +334,7 @@ namespace DiffCoverageTool
 
             return (allSuccess, combinedOutput);
         }
+
 
         static (bool success, string output) RunAngularTest(string repoPath, HashSet<string> selectedPaths = null)
         {
