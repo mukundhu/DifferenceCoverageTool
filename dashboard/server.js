@@ -57,11 +57,16 @@ app.get('/api/discover-services', (req, res) => {
                 results = results.concat(walkDir(fullPath, depth + 1));
             }
             // Check this directory itself
-            const pattern = framework === 'angular' ? 'package.json' : '*.csproj';
+            const isTestProject = (name) => /\.(tests?|specs?|unittests?|integrationtests?)$/i.test(name.replace(/\.csproj$/i, ''));
             const files = fs.readdirSync(dir).filter(f => {
                 if (framework === 'angular') return f === 'package.json';
-                return f.endsWith('.csproj');
+                return f.endsWith('.csproj') && !isTestProject(f);
             });
+            // For Angular, skip directories that are clearly test-only apps
+            const dirName = path.basename(dir).toLowerCase();
+            const isTestDir = /tests?$|specs?$|\.tests?$/.test(dirName);
+            if (framework === 'angular' && isTestDir) return results;
+
             for (const f of files) {
                 const name = framework === 'angular' ? path.basename(dir) : f.replace('.csproj', '');
                 results.push({ name, path: dir, file: f });
